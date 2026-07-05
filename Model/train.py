@@ -1,131 +1,111 @@
-"""Treino do modelo de risco de crédito (abt -> modelo).
-
-Lê o config próprio de /Model (Model/config.yml): hiperparâmetros, seleção de
-variáveis, estratégia de balanceamento, threshold e caminhos — nada chumbado.
-Caminhos resolvidos relativos à raiz do projeto (portável). Lê a ABT de
-/Dados/abt.csv. Métrica oficial reportada: ROC AUC.
+"""
+Módulo de Treinamento e Persistência Dinâmica de Modelos.
 """
 
-import pandas as pd
+from pathlib import Path
+
 import joblib
 import matplotlib
-matplotlib.use("Agg")  # backend sem display: funciona em servidor/headless (Docker)
 import matplotlib.pyplot as plt
-from pathlib import Path
+import numpy as np
+import pandas as pd
+import xgboost as xgb
 import yaml
-from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import classification_report, roc_auc_score
-from imblearn.over_sampling import SMOTE
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import precision_recall_curve, roc_auc_score
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
 
-# Raiz do projeto = pasta-pai de Model/ (este arquivo vive em Model/)
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_PATH = PROJECT_ROOT / "Model" / "config.yml"
-
 
 def load_config(path: Path = CONFIG_PATH) -> dict:
     with open(path, encoding="utf-8") as f:
         return yaml.safe_load(f)
 
+def save_feature_importance(model, feature_names, save_path, model_name):
+    """Gera gráfico de importância e salva dinamicamente."""
+    try:
+        est = model.named_steps['model'] if isinstance(model, Pipeline) else model
+        if hasattr(est, 'feature_importances_'):
+            imp = pd.Series(est.feature_importances_, index=feature_names).nlargest(15)
+            plt.figure(figsize=(8, 6))
+            imp.sort_values().plot(kind='barh', color='skyblue')
+            plt.title(f'Top 15 Features: {model_name}')
+            plt.tight_layout()
+            plt.savefig(save_path / "feature_importance.png")
+            plt.close()
+    except Exception as e:
+        print(f"Feature importance não disponível para {model_name}: {e}")
 
-def train_model(cfg: dict | None = None) -> None:
-    cfg = cfg or load_config()
-
+def train_and_evaluate():
+    cfg = load_config()
     target = cfg["project"]["target"]
-    seed = cfg["project"]["random_state"]
-    mcfg = cfg["model"]
+    abt_dir = PROJECT_ROOT / cfg["paths"]["abt_dir"]
+    model_base_dir = PROJECT_ROOT / cfg["paths"]["model_dir"]
 
-    data_dir = PROJECT_ROOT / cfg["data"]["data_dir"]
-    data_file = data_dir / cfg["data"]["abt_file"]
+    # Carregamento
+    train_df = pd.read_csv(abt_dir / "abt_train.csv")
+    val_df = pd.read_csv(abt_dir / "val_data.csv")
+    X_train, y_train = train_df.drop(columns=[target]), train_df[target]
+    X_val, y_val = val_df.drop(columns=[target]), val_df[target]
 
-    print("--- Iniciando Pipeline com ABT Finalizada ---")
-    df = pd.read_csv(data_file)
+    # Definição dos modelos
+    modelos = {
+        'XGBOOST': xgb.XGBClassifier(
+            n_estimators=1000, learning_rate=0.05, max_depth=5, 
+            scale_pos_weight=5, early_stopping_rounds=50, random_state=42
+        ),
+        'RANDOM_FOREST': RandomForestClassifier(
+            class_weight='balanced', n_estimators=200, random_state=42, n_jobs=-1
+        ),
+        'LOGISTIC_REGRESSION': Pipeline([
+            ('scaler', StandardScaler()), 
+            ('model', LogisticRegression(class_weight='balanced', max_iter=1000))
+        ])
+    }
 
-    #Atualização em 01/07, criando pasta antes para não sobescrever na persistência do modelo
-    model_name = mcfg["name"]
-    model_dir = PROJECT_ROOT / cfg["paths"]["model_dir"] / model_name
-    model_dir.mkdir(parents=True, exist_ok=True)
+    resultados = []
 
-    # 1. Mantém apenas colunas numéricas + o target
-    y = df[target]
-    df = df.select_dtypes(include=["number"]).drop(columns=[target], errors="ignore")
-    df = df.fillna(0)
-    df[target] = y
+    for nome, model in modelos.items():
+        print(f"\n>>> Treinando: {nome}")
+        
+        # Treino específico
+        if nome == 'XGBOOST':
+            model.fit(X_train, y_train, eval_set=[(X_val, y_val)], verbose=False)
+        else:
+            model.fit(X_train, y_train)
 
-    # 2. Feature engineering (configurável)
-    if mcfg["feature_engineering"].get("renda_por_familia") \
-            and "AMT_INCOME_TOTAL" in df.columns and "CNT_FAM_MEMBERS" in df.columns:
-        df["RENDA_POR_FAMILIA"] = df["AMT_INCOME_TOTAL"] / (df["CNT_FAM_MEMBERS"] + 1)
-
-    X = df.drop(columns=[target])
-    y = df[target]
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=mcfg["test_size"], random_state=seed
-    )
-    # 3. Seleção de variáveis por importância (configurável)
-    fs = mcfg["feature_selection"]
-    if fs["enabled"]:
-        print("Rankeando variáveis...")
-        ranker = RandomForestClassifier(
-            n_estimators=100, random_state=seed, n_jobs=mcfg["hyperparameters"]["n_jobs"]
-        )
-        ranker.fit(X_train, y_train)
-        importances = pd.Series(ranker.feature_importances_, index=X_train.columns)
-        top_features = importances.nlargest(fs["top_n"]).index.tolist()
-        X_train = X_train[top_features]
-        X_test = X_test[top_features]
-        print(f"Features selecionadas para treino: {top_features}")
-    else:
-        top_features = X_train.columns.tolist()
-
-    # 3.1 Salva conjunto de teste (X_test, y_test) para avaliação futura do modelo em evaluation.ipynb
-    X_test.to_csv(model_dir / "X_test.csv", index=False)
-    y_test.to_csv(model_dir / "y_test.csv", index=False)
-
-
-    # 4. Balanceamento (configurável: smote | class_weight | none)
-    balancing = mcfg["balancing"]
-    if balancing.get("method") == "smote":
-        X_train, y_train = SMOTE(random_state=seed).fit_resample(X_train, y_train)
-
-    class_weight = balancing.get("class_weight")
-    if class_weight is not None:
-        # YAML pode carregar as chaves como str; garante int (rótulos das classes)
-        class_weight = {int(k): v for k, v in class_weight.items()}
-
-    hp = mcfg["hyperparameters"]
-    model = RandomForestClassifier(
-        n_estimators=hp["n_estimators"],
-        max_depth=hp["max_depth"],
-        n_jobs=hp["n_jobs"],
-        class_weight=class_weight,
-        random_state=seed,
-    )
-    model.fit(X_train, y_train)
-
-    # 5. Avaliação no conjunto de TESTE (held-out) — métrica oficial: ROC AUC
-    probs = model.predict_proba(X_test)[:, 1]
-    threshold = mcfg["threshold"]
-    y_pred = (probs >= threshold).astype(int)
-
-    print("\n--- Relatório Final (conjunto de teste) ---")
-    print(f"ROC AUC: {roc_auc_score(y_test, probs):.4f}")
-    print(f"Threshold aplicado: {threshold}")
-    print(classification_report(y_test, y_pred))
-
-    # 6. Persistência do modelo no diretório configurado
-    model_path = model_dir / mcfg["filename"]
-    joblib.dump(model, model_path)
-    print(f"Modelo salvo em: {model_path}")
-
-    # 7. Importância das variáveis do modelo final
-    fig_path = model_dir / "feature_importance_final.png"
-    pd.Series(model.feature_importances_, index=top_features).nlargest(10).plot(kind="barh")
-    plt.title("Top 10 Variáveis (após merge Bureau + PrevApp)")
-    plt.tight_layout()
-    plt.savefig(fig_path)
-    print(f"Gráfico salvo em: {fig_path}")
-
+        # Avaliação
+        probs = model.predict_proba(X_val)[:, 1]
+        auc = roc_auc_score(y_val, probs)
+        
+        # Threshold
+        precision, recall, thresholds = precision_recall_curve(y_val, probs)
+        idx = np.where(precision >= 0.35)[0]
+        best_thresh = thresholds[idx[0]] if (len(idx) > 0 and idx[0] < len(thresholds)) else 0.5
+        resultados.append({'Modelo': nome, 'AUC': auc, 'Threshold': best_thresh})
+        
+        # PERSISTÊNCIA DINÂMICA
+        # O nome do arquivo .pkl agora usa o nome do modelo (ex: XGBOOST.pkl)
+        save_path = model_base_dir / nome
+        save_path.mkdir(parents=True, exist_ok=True)
+        
+        save_feature_importance(model, X_train.columns, save_path, nome)
+        
+        # Salvamento dinâmico: usa a variável 'nome' para criar o nome do arquivo
+        joblib.dump(model, save_path / f"{nome.lower()}_model.pkl")
+        
+        with open(save_path / "threshold.txt", "w") as f:
+            f.write(str(best_thresh))
+            
+    # Rankeamento
+    pd.DataFrame(resultados).sort_values(by='AUC', ascending=False).to_csv(model_base_dir / "ranking_modelos.csv", index=False)
+    print("\nProcesso finalizado. Modelos salvos dinamicamente em suas pastas.")
 
 if __name__ == "__main__":
-    train_model()
+    train_and_evaluate()

@@ -23,6 +23,8 @@ data:
 # --- Saída (modelo treinado + gráficos) -------------------------------------
 paths:
   model_dir: Model/artifacts
+  abt_dir: Dados/abt
+
 
 # --- Modelagem (abt -> modelo) ----------------------------------------------
 model:
@@ -40,7 +42,7 @@ model:
     n_estimators: 250
     max_depth: 15
     n_jobs: -1
-  threshold: 0.35                      # corte de probabilidade p/ classe positiva
+  threshold: 0.25          # corte de probabilidade p/ classe positiva
   feature_engineering:
     renda_por_familia: true            # AMT_INCOME_TOTAL / (CNT_FAM_MEMBERS + 1)
 

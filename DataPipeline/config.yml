@@ -33,7 +33,9 @@ data:
     application: clean_data_train.csv                  # tabela principal limpa (canônico)
     bureau: clean_bureau.csv                      # intermediário p/ a ABT
     previous_application: clean_previous_app.csv
-  abt_file: abt.csv                               # ABT final (canônico)
+  abt_files: 
+    abt: abt_train.csv                              # Base ABT final (canônico)
+    val: val_data.csv                               # Base de teste do modelo
 
 # --- Sanitização (raw -> clean) ---------------------------------------------
 sanitization:

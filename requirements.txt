@@ -8,3 +8,5 @@ seaborn
 imbalanced-learn
 ipywidgets
 pyyaml
+xgboost-3.3.0
+imblearn
