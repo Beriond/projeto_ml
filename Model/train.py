@@ -42,6 +42,43 @@ def save_feature_importance(model, feature_names, save_path, model_name):
     except Exception as e:
         print(f"Feature importance não disponível para {model_name}: {e}")
 
+def build_models(cfg):
+    random_state = cfg["project"]["random_state"]
+    models_cfg = cfg["models"]
+
+    models = {}
+
+    for model_name, model_info in models_cfg.items():
+        if not model_info.get("enabled", True):
+            continue
+
+        params = model_info.get("params", {}).copy()
+        params["random_state"] = random_state
+
+        if model_info["class"] == "XGBClassifier":
+            model = xgb.XGBClassifier(**params)
+
+        elif model_info["class"] == "RandomForestClassifier":
+            model = RandomForestClassifier(**params)
+
+        elif model_info["class"] == "LogisticRegression":
+            base_model = LogisticRegression(**params)
+
+            if model_info.get("use_scaler", False):
+                model = Pipeline([
+                    ("scaler", StandardScaler()),
+                    ("model", base_model)
+                ])
+            else:
+                model = base_model
+
+        else:
+            raise ValueError(f"Modelo não suportado: {model_info['class']}")
+
+        models[model_name] = model
+
+    return models
+
 def train_and_evaluate():
     cfg = load_config()
     target = cfg["project"]["target"]
@@ -53,21 +90,15 @@ def train_and_evaluate():
     val_df = pd.read_csv(abt_dir / "val_data.csv")
     X_train, y_train = train_df.drop(columns=[target]), train_df[target]
     X_val, y_val = val_df.drop(columns=[target]), val_df[target]
+    
+    eval_dir = model_base_dir / "evaluation_data"
+    eval_dir.mkdir(parents=True, exist_ok=True)
 
-    # Definição dos modelos
-    modelos = {
-        'XGBOOST': xgb.XGBClassifier(
-            n_estimators=1000, learning_rate=0.05, max_depth=5, 
-            scale_pos_weight=5, early_stopping_rounds=50, random_state=42
-        ),
-        'RANDOM_FOREST': RandomForestClassifier(
-            class_weight='balanced', n_estimators=200, random_state=42, n_jobs=-1
-        ),
-        'LOGISTIC_REGRESSION': Pipeline([
-            ('scaler', StandardScaler()), 
-            ('model', LogisticRegression(class_weight='balanced', max_iter=1000))
-        ])
-    }
+    joblib.dump(X_val, eval_dir / "X_test.pkl")
+    joblib.dump(y_val, eval_dir / "y_test.pkl")
+    joblib.dump(list(X_val.columns), eval_dir / "feature_names.pkl")
+
+    modelos = build_models(cfg)
 
     resultados = []
 
