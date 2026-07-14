@@ -168,7 +168,7 @@ def build_abt() -> None:
 
     df = build_final_features(df).replace([np.inf, -np.inf], np.nan)
 
-    abt_filename = cfg["data"]["abt_files"]["full"]
+    abt_filename = cfg["data"]["abt_files"]["abt"]
     df.to_parquet(store.path("abt", abt_filename), index=False, **kw)
 
     print(f"ABT Finalizada e salva no MinIO ({abt_filename}).")
