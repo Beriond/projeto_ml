@@ -14,6 +14,7 @@ from pathlib import Path
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import precision_recall_curve, roc_auc_score
+from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 import matplotlib
@@ -42,6 +43,74 @@ def save_feature_importance(model, feature_names, store, model_name):
         with store.open("models", f"models/{model_name}/feature_importance.png", "wb") as fh:
             plt.savefig(fh)
         plt.close()
+
+
+def prepare_model_data(
+    df: pd.DataFrame,
+    target: str,
+    random_state: int,
+    test_size: float = 0.20,
+    val_size: float = 0.20,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """
+    Realiza o encoding das variáveis categóricas e divide
+    os dados em treino, validação e teste (holdout).
+    """
+
+    features = df.drop(
+        columns=[
+            target,
+            "SK_ID_CURR",
+        ],
+        errors="ignore",
+    )
+
+    features = pd.get_dummies(
+        features,
+        dummy_na=True,
+    )
+
+    features[target] = df[target]
+
+    # 1ª divisão: separa o TEST (holdout) do resto. Só deve ser tocado
+    # uma vez, no final, para avaliar o modelo já escolhido.
+    train_val, test = train_test_split(
+        features,
+        test_size=test_size,
+        stratify=features[target],
+        random_state=random_state,
+    )
+
+    # 2ª divisão: separa TREINO de VALIDAÇÃO dentro do que sobrou.
+    # val_size é fração do dataset ORIGINAL, então reconvertemos para
+    # fração do que sobrou depois de tirar o test.
+    val_relative_size = val_size / (1 - test_size)
+
+    train, validation = train_test_split(
+        train_val,
+        test_size=val_relative_size,
+        stratify=train_val[target],
+        random_state=random_state,
+    )
+
+    # Imputação por mediana — calculada SOMENTE no treino e aplicada em
+    # ambos os splits. Isso resolve dois problemas do fillna(0) anterior:
+    # (1) mediana preserva melhor a distribuição de colunas como EXT_SOURCE
+    # e as razões financeiras do que forçar tudo pra 0; (2) calcular a
+    # mediana depois do split (e só com o treino) evita vazamento de
+    # informação da validação para dentro do treino.
+    numeric_cols = train.drop(columns=[target]).select_dtypes(
+        include="number").columns
+    medianas_treino = train[numeric_cols].median()
+
+    for split in (train, validation, test):
+        split[numeric_cols] = split[numeric_cols].fillna(medianas_treino)
+        # Fallback: se alguma coluna do treino for 100% nula, a mediana
+        # também sai NaN — preenche com 0 pra garantir que nenhum NaN
+        # sobrevive antes do .fit() do modelo.
+        split[numeric_cols] = split[numeric_cols].fillna(0)
+
+    return train, validation, test
 
 
 def build_models(cfg, y_train):
@@ -76,11 +145,24 @@ def train_and_evaluate():
     target = cfg["project"]["target"]
 
     print("Carregando ABT do MinIO...")
-    train_df = pd.read_parquet(store.path(
-        "abt", cfg["abt_files"]["train"]), **kw)
-    val_df = pd.read_parquet(store.path("abt", cfg["abt_files"]["val"]), **kw)
-    test_df = pd.read_parquet(store.path(
-        "abt", cfg["abt_files"]["test"]), **kw)
+    df = pd.read_parquet(store.path("abt", cfg["abt_files"]["abt"]), **kw)
+
+    # Separação da ABT para treino, validação, e teste (holdout)
+    split_cfg = cfg.get("split", {})
+    train_df, val_df, test_df = prepare_model_data(
+        df,
+        target,
+        cfg["project"]["random_state"],
+        test_size=split_cfg.get("test_size", 0.20),
+        val_size=split_cfg.get("val_size", 0.20),
+    )
+    
+    print(
+    f"Divisão Holdout: "
+    f"Treino={1 - split_cfg['test_size'] - split_cfg['val_size']:.0%}, "
+    f"Validação={split_cfg['val_size']:.0%}, "
+    f"Teste={split_cfg['test_size']:.0%}"
+    )
 
     X_train, y_train = train_df.drop(columns=[target]), train_df[target]
     X_val, y_val = val_df.drop(columns=[target]), val_df[target]
