@@ -157,12 +157,20 @@ def train_and_evaluate():
         val_size=split_cfg.get("val_size", 0.20),
     )
     
-    print(
-    f"Divisão Holdout: "
-    f"Treino={1 - split_cfg['test_size'] - split_cfg['val_size']:.0%}, "
-    f"Validação={split_cfg['val_size']:.0%}, "
-    f"Teste={split_cfg['test_size']:.0%}"
-    )
+    # --- Pseudo logging pra observar
+    print("\n--- Divisão dos Dados ---")
+    total = len(df)
+    for name, split in [
+        ("Treino", train_df),
+        ("Validação", val_df),
+        ("Teste", test_df),
+    ]:
+        print(
+            f"{name:<10}: {len(split):>7,} amostras "
+            f"({len(split)/total:.1%}) | "
+            f"TARGET=1: {split[target].mean():.2%}"
+        )
+    print("-------------------------\n")
 
     X_train, y_train = train_df.drop(columns=[target]), train_df[target]
     X_val, y_val = val_df.drop(columns=[target]), val_df[target]
