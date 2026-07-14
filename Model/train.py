@@ -179,18 +179,17 @@ def train_and_evaluate():
     # --- Persistência de Artefatos de Suporte ---
     print("Salvando artefatos de inferência e auditoria...")
 
-    with store.open("models", "evaluation_data/medianas.pkl", "wb") as fh:
-        joblib.dump(X_train.median(numeric_only=True), fh)
-    with store.open("models", "evaluation_data/feature_names.pkl", "wb") as fh:
-        joblib.dump(X_train.columns.tolist(), fh)
-    with store.open("models", "evaluation_data/X_val.pkl", "wb") as fh:
-        joblib.dump(X_val, fh)
-    with store.open("models", "evaluation_data/y_val.pkl", "wb") as fh:
-        joblib.dump(y_val, fh)
-    with store.open("models", "evaluation_data/X_test.pkl", "wb") as fh:
-        joblib.dump(X_test, fh)
-    with store.open("models", "evaluation_data/y_test.pkl", "wb") as fh:
-        joblib.dump(y_test, fh)
+    artifacts = {
+        "evaluation_data/medianas.pkl": X_train.median(numeric_only=True),
+        "evaluation_data/feature_names.pkl": X_train.columns.tolist(),
+        "evaluation_data/X_val.pkl": X_val,
+        "evaluation_data/y_val.pkl": y_val,
+        "evaluation_data/X_test.pkl": X_test,
+        "evaluation_data/y_test.pkl": y_test,
+    }
+    for path, obj in artifacts.items():
+        with store.open("models", path, "wb") as fh:
+            joblib.dump(obj, fh)
 
     # --- Loop de Treinamento ---
     modelos = build_models(cfg, y_train)
