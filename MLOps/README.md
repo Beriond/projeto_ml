@@ -79,4 +79,8 @@ reflete a mudança **sem rebuild** da imagem.
 - **Ações automatizadas:** conectar a saída do modelo a uma ação de negócio
   (aprovar/negar/encaminhar) via serviço de predição (FastAPI) + fila/evento.
 - **Registro de modelos:** versionar o `.pkl` no bucket `models/` por data/commit.
-```
+
+### Melhorias ambiente
+- Rodar scripts python em seu próprio container com DockerOperator do airflow
+- Otimizar Dockerfiles de cada container - remover libs não utilizadas
+- Versões de imagens estáticas
