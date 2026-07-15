@@ -49,8 +49,8 @@ def prepare_model_data(
     df: pd.DataFrame,
     target: str,
     random_state: int,
-    test_size: float = 0.20,
-    val_size: float = 0.20,
+    test_size: float,
+    val_size: float,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
     Realiza o encoding das variáveis categóricas e divide
@@ -153,8 +153,8 @@ def train_and_evaluate():
         df,
         target,
         cfg["project"]["random_state"],
-        test_size=split_cfg.get("test_size", 0.20),
-        val_size=split_cfg.get("val_size", 0.20),
+        test_size=split_cfg.get("test_size"),
+        val_size=split_cfg.get("val_size"),
     )
     
     # --- Pseudo logging pra observar
@@ -181,6 +181,8 @@ def train_and_evaluate():
 
     artifacts = {
         "evaluation_data/medianas.pkl": X_train.median(numeric_only=True),
+        "evaluation_data/X_train.pkl": X_train,
+        "evaluation_data/y_train.pkl": y_train,
         "evaluation_data/feature_names.pkl": X_train.columns.tolist(),
         "evaluation_data/X_val.pkl": X_val,
         "evaluation_data/y_val.pkl": y_val,

@@ -60,8 +60,6 @@ models:
 # --- Pós-Processamento e Avaliação -----------------------------------------
 # O threshold é o corte para classificar como "1" (Inadimplente)
 # O train.py ajusta isso para garantir o min_recall_target
-feature_engineering:
-  renda_por_familia: true     # Flag para futuras inclusões de lógica
 
 evaluation:
   min_recall_target: 0.70
