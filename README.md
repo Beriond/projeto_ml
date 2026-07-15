@@ -17,7 +17,7 @@
 ## 🚀 Primeiros Passos
 ```bash
 # Para começar, clone o repositório em sua máquina local:
-git clone https://github.com/krexaim/projeto_ml.git
+git clone https://github.com/beriond/projeto_ml.git
 
 # Entre no seu projeto:
 cd projeto_ml
