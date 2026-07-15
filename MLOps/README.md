@@ -7,11 +7,13 @@ filesystem**. A forma canônica de reproduzir o projeto é subir este stack.
 
 ## Arquitetura
 
+![desenho_arquitetura](/MLOps/arquitetura_MLOps.png)
+
 ```
 Dados/*.csv (host)  --seeder-->            MinIO(raw)
 MinIO(raw)          --[Airflow: sanitize]--> MinIO(clean, parquet)
 MinIO(clean)        --[Airflow: build_abt]-> MinIO(abt/abt.csv)
-MinIO(abt)          --[Airflow: train]-----> MinIO(models/<name>/modelo_risco_credito.pkl)
+MinIO(abt)          --[Airflow: train]-----> MinIO(models/models/<name>/model.pkl)
 ```
 
 Componentes (`docker-compose.yml`, na raiz):
